@@ -61,7 +61,10 @@
       const layers={},labels={},loaded={},group=L.layerGroup().addTo(map);
       async function fetchAdmin(lv,retry=0){
         const key=`osm_admin_${lv}_${new Date().toISOString().slice(0,10)}`;
-        if(localStorage[key]) return JSON.parse(localStorage[key]);
+        let cached=localStorage.getItem(key);
+        if(cached){
+          try{return JSON.parse(cached);}catch(e){console.warn('cache parse fail',e);}
+        }
         const q=`[out:json][timeout:25]${bbox};relation[admin_level=${lv}][boundary=administrative];(._;>;);out body;`;
         const res=await fetch(overpassURL,{method:'POST',body:q,headers:{'Content-Type':'text/plain'}});
         if(res.status===429 && retry<3){
@@ -70,7 +73,8 @@
         }
         if(!res.ok) throw new Error('Overpass '+res.status);
         const geo=osmtogeojson(await res.json());
-        localStorage[key]=JSON.stringify(geo); return geo;
+        try{localStorage.setItem(key,JSON.stringify(geo));}catch(e){console.warn('localStorage set fail',e);}
+        return geo;
       }
       const mkLabel=(f,l)=>{try{const p=turf.centerOfMass(f).geometry.coordinates.reverse();return L.marker(p,{icon:L.divIcon({className:'label-text',html:`<span style=\"font-size:${16-l*0.8}px\">${f.properties.tags.name||''}</span>`}),interactive:false});}catch{return null;}};
       async function load(lv){
