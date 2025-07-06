@@ -52,7 +52,8 @@
     /**************** ここから地図ロジック ****************/
     function initMap(){
       const overpassURL='https://overpass-api.de/api/interpreter';
-      const bbox='[bbox:20,122,46,154]'; // Japan bounding box
+      // limit to Japan using area query to keep response size small
+      const jpArea='area["name:en"="Japan"]["admin_level"="2"]->.a;';
       const style={4:{color:'#d7191c',weight:3,opacity:1},8:{color:'#2b83ba',weight:1.5,opacity:0.8},9:{color:'#1a9641',weight:1,opacity:0.8},10:{color:'#ff7f00',weight:0.8,opacity:0.8,dashArray:'3 3'}};
 
       const map=L.map('map').setView([36.5,138],5);
@@ -65,7 +66,7 @@
         if(cached){
           try{return JSON.parse(cached);}catch(e){console.warn('cache parse fail',e);}
         }
-        const q=`[out:json][timeout:25]${bbox};relation[admin_level=${lv}][boundary=administrative];(._;>;);out body;`;
+        const q=`[out:json][timeout:25];${jpArea}relation(area.a)[admin_level=${lv}][boundary=administrative];(._;>;);out body;`;
         const res=await fetch(overpassURL,{method:'POST',body:q,headers:{'Content-Type':'text/plain'}});
         if(res.status===429 && retry<3){
           await new Promise(ok=>setTimeout(ok,(retry+1)*1000));
@@ -73,7 +74,12 @@
         }
         if(!res.ok) throw new Error('Overpass '+res.status);
         const geo=osmtogeojson(await res.json());
-        try{localStorage.setItem(key,JSON.stringify(geo));}catch(e){console.warn('localStorage set fail',e);}
+        const str=JSON.stringify(geo);
+        if(str.length<4*1024*1024){
+          try{localStorage.setItem(key,str);}catch(e){console.warn('localStorage set fail',e);}
+        }else{
+          console.warn('layer',lv,'data too big, skip caching');
+        }
         return geo;
       }
       const mkLabel=(f,l)=>{try{const p=turf.centerOfMass(f).geometry.coordinates.reverse();return L.marker(p,{icon:L.divIcon({className:'label-text',html:`<span style=\"font-size:${16-l*0.8}px\">${f.properties.tags.name||''}</span>`}),interactive:false});}catch{return null;}};
