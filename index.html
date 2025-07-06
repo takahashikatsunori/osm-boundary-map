@@ -68,7 +68,20 @@
         localStorage[key]=JSON.stringify(geo); return geo;
       }
       const mkLabel=(f,l)=>{try{const p=turf.centerOfMass(f).geometry.coordinates.reverse();return L.marker(p,{icon:L.divIcon({className:'label-text',html:`<span style=\"font-size:${16-l*0.8}px\">${f.properties.tags.name||''}</span>`}),interactive:false});}catch{return null;}};
-      async function load(lv){if(loaded[lv])return;loaded[lv]=true;try{const g=await fetchAdmin(lv);layers[lv]=L.geoJSON(g,{style:style[lv],onEachFeature:(f,l)=>l.on({mouseover:e=>e.target.setStyle({weight:style[lv].weight+1,color:'#ffff00'}),mouseout:e=>e.target.setStyle(style[lv]),click:e=>L.popup().setLatLng(e.latlng).setContent(f.properties.tags.name||'').openOn(map)})}).addTo(group);labels[lv]=L.layerGroup(g.features.map(ft=>mkLabel(ft,lv)).filter(Boolean)).addTo(group);if(lv===4)map.fitBounds(layers[4].getBounds());refresh();}catch(err){console.error('layer',lv,err);}}
+      async function load(lv){
+        if(loaded[lv]) return;
+        try{
+          const g=await fetchAdmin(lv);
+          loaded[lv]=true;
+          layers[lv]=L.geoJSON(g,{style:style[lv],onEachFeature:(f,l)=>l.on({mouseover:e=>e.target.setStyle({weight:style[lv].weight+1,color:'#ffff00'}),mouseout:e=>e.target.setStyle(style[lv]),click:e=>L.popup().setLatLng(e.latlng).setContent(f.properties.tags.name||'').openOn(map)})}).addTo(group);
+          labels[lv]=L.layerGroup(g.features.map(ft=>mkLabel(ft,lv)).filter(Boolean)).addTo(group);
+          if(lv===4) map.fitBounds(layers[4].getBounds());
+          refresh();
+        }catch(err){
+          console.error('layer',lv,err);
+          loaded[lv]=false;
+        }
+      }
       function refresh(){const z=map.getZoom();const vis={4:true,8:z>=8,9:z>=11,10:z>=13};[4,8,9,10].forEach(lv=>{if(!layers[lv])return;(vis[lv]?group.addLayer:group.removeLayer)(layers[lv]);(vis[lv]?group.addLayer:group.removeLayer)(labels[lv]);if(lv===8)layers[8].setStyle({opacity:z>=11?0.3:0.8});if(lv===9)layers[9].setStyle({opacity:z>=13?0.4:0.8});});}
       load(4);load(8);
       map.on('zoomend',async()=>{const z=map.getZoom();if(z>=11&&!layers[9])await load(9);if(z>=13&&!layers[10])await load(10);refresh();});
