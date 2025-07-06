@@ -52,11 +52,11 @@
     /**************** ここから地図ロジック ****************/
     function initMap(){
       const overpassURL='https://overpass-api.de/api/interpreter';
-      // limit to Japan using area query to keep response size small
-      const jpArea='area["name:en"="Japan"]["admin_level"="2"]->.a;';
+      // limit to Tokyo Prefecture using area query to keep response size small
+      const tokyoArea='area["name"="東京都"]["admin_level"="4"]->.a;';
       const style={4:{color:'#d7191c',weight:3,opacity:1},8:{color:'#2b83ba',weight:1.5,opacity:0.8},9:{color:'#1a9641',weight:1,opacity:0.8},10:{color:'#ff7f00',weight:0.8,opacity:0.8,dashArray:'3 3'}};
 
-      const map=L.map('map').setView([36.5,138],5);
+      const map=L.map('map').setView([35.68,139.77],9);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
 
       const layers={},labels={},loaded={},group=L.layerGroup().addTo(map);
@@ -66,7 +66,7 @@
         if(cached){
           try{return JSON.parse(cached);}catch(e){console.warn('cache parse fail',e);}
         }
-        const q=`[out:json][timeout:25];${jpArea}relation(area.a)[admin_level=${lv}][boundary=administrative];(._;>;);out body;`;
+        const q=`[out:json][timeout:25];${tokyoArea}relation(area.a)[admin_level=${lv}][boundary=administrative];(._;>;);out body;`;
         const res=await fetch(overpassURL,{method:'POST',body:q,headers:{'Content-Type':'text/plain'}});
         if(res.status===429 && retry<3){
           await new Promise(ok=>setTimeout(ok,(retry+1)*1000));
