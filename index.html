@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>OSM 行政境界ビューア</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
+  <style>
+    html,body,#map{margin:0;padding:0;height:100vh;width:100vw;}
+    .leaflet-tile{filter:brightness(1.3) saturate(0.2);} /* 背景淡色化 */
+    .label-text{font-family:sans-serif;text-shadow:0 0 3px #fff;white-space:nowrap;}
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Leaflet を即時読み込み (unpkg) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+  <!-- turf はサイズ小さいので unpkg で十分 -->
+  <script src="https://unpkg.com/@turf/turf/turf.min.js" crossorigin="anonymous"></script>
+
+  <script>
+  /*****************************************************************
+   * 依存ライブラリ確保ユーティリティ
+   *  - osmtogeojson の CDN パスを正しいものに修正 (dist 配下に無い!)
+   *****************************************************************/
+  (function(){
+    const CDN={
+      osmtogeojson:[
+        'https://unpkg.com/osmtogeojson@3/osmtogeojson.js',                    // ✅ unpkg (正パス)
+        'https://cdn.jsdelivr.net/npm/osmtogeojson@3/osmtogeojson.js',        // ✅ jsDelivr (正パス)
+        'https://raw.githubusercontent.com/tyrasd/osmtogeojson/master/osmtogeojson.js' // GitHub Raw
+      ]
+    };
+
+    function loadScript(url){return new Promise((ok,ng)=>{const s=document.createElement('script');s.src=url;s.async=false;s.onload=ok;s.onerror=ng;document.head.appendChild(s);});}
+
+    async function ensureO2G(){
+      if(window.osmtogeojson) return true;
+      for(const u of CDN.osmtogeojson){try{await loadScript(u);}catch{console.warn('CDN fail',u);continue;} if(window.osmtogeojson) return true;}
+      return false;
+    }
+
+    document.addEventListener('DOMContentLoaded',async()=>{
+      if(!window.L){alert('Leaflet が読み込めませんでした');return;}
+      const ok=await ensureO2G();
+      if(!ok){alert('osmtogeojson を読み込めませんでした。ネットワークをご確認下さい。');return;}
+      console.log('All libs ready');
+      initMap();
+    });
+
+    /**************** ここから地図ロジック ****************/
+    function initMap(){
+      const overpassURL='https://overpass-api.de/api/interpreter';
+      const style={4:{color:'#d7191c',weight:3,opacity:1},8:{color:'#2b83ba',weight:1.5,opacity:0.8},9:{color:'#1a9641',weight:1,opacity:0.8},10:{color:'#ff7f00',weight:0.8,opacity:0.8,dashArray:'3 3'}};
+
+      const map=L.map('map').setView([36.5,138],5);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+
+      const layers={},labels={},loaded={},group=L.layerGroup().addTo(map);
+      async function fetchAdmin(lv){
+        const key=`osm_admin_${lv}_${new Date().toISOString().slice(0,10)}`;
+        if(localStorage[key]) return JSON.parse(localStorage[key]);
+        const q=`[out:json][timeout:25];relation[admin_level=${lv}][boundary=administrative];(._;>;);out body;`;
+        const res=await fetch(overpassURL,{method:'POST',body:q,headers:{'Content-Type':'text/plain'}});
+        if(!res.ok) throw new Error('Overpass '+res.status);
+        const geo=osmtogeojson(await res.json());
+        localStorage[key]=JSON.stringify(geo); return geo;
+      }
+      const mkLabel=(f,l)=>{try{const p=turf.centerOfMass(f).geometry.coordinates.reverse();return L.marker(p,{icon:L.divIcon({className:'label-text',html:`<span style=\"font-size:${16-l*0.8}px\">${f.properties.tags.name||''}</span>`}),interactive:false});}catch{return null;}};
+      async function load(lv){if(loaded[lv])return;loaded[lv]=true;try{const g=await fetchAdmin(lv);layers[lv]=L.geoJSON(g,{style:style[lv],onEachFeature:(f,l)=>l.on({mouseover:e=>e.target.setStyle({weight:style[lv].weight+1,color:'#ffff00'}),mouseout:e=>e.target.setStyle(style[lv]),click:e=>L.popup().setLatLng(e.latlng).setContent(f.properties.tags.name||'').openOn(map)})}).addTo(group);labels[lv]=L.layerGroup(g.features.map(ft=>mkLabel(ft,lv)).filter(Boolean)).addTo(group);if(lv===4)map.fitBounds(layers[4].getBounds());refresh();}catch(err){console.error('layer',lv,err);}}
+      function refresh(){const z=map.getZoom();const vis={4:true,8:z>=8,9:z>=11,10:z>=13};[4,8,9,10].forEach(lv=>{if(!layers[lv])return;(vis[lv]?group.addLayer:group.removeLayer)(layers[lv]);(vis[lv]?group.addLayer:group.removeLayer)(labels[lv]);if(lv===8)layers[8].setStyle({opacity:z>=11?0.3:0.8});if(lv===9)layers[9].setStyle({opacity:z>=13?0.4:0.8});});}
+      load(4);load(8);
+      map.on('zoomend',async()=>{const z=map.getZoom();if(z>=11&&!layers[9])await load(9);if(z>=13&&!layers[10])await load(10);refresh();});
+      let lbl=true;document.addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='l'){lbl=!lbl;Object.values(labels).forEach(lg=>lbl?group.addLayer(lg):group.removeLayer(lg));}});
+    }
+  })();
+  </script>
+</body>
+</html>
